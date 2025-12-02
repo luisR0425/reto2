@@ -33,7 +33,7 @@ Este estilo permite escalar automáticamente con mínima operación, absorber pi
 
 1. **AWS API Gateway (HTTP API)**
    - Expone `POST /prod/event-notification`.
-   - Configurado con `throttling_rate_limit = 15 rps` y un **burst alto (≈1000–2000)** para cumplir la restricción de 15 rps sin generar errores 429 durante el pico de 1000 requests/30 s.
+   - Configurado con `throttling_rate_limit = 15 rps` y un **burst alto (≈1000–2000)** para cumplir la restricción de 15 rps.
    - Actúa como *front door* seguro (HTTPS, validación básica).
 
 2. **Lambda `IngestEvent`**
