@@ -182,10 +182,10 @@ Este objetivo combina:
 A continuación se presentan los diagramas en formato C4.
 
 ### Diagrama de Contexto:
-![Diagrama de contexto](images/C4-Diagrama-de-arquitectura-Diagrama-de-Contexto.png)
+![Diagrama de contexto](C4-Diagrama-de-arquitectura-Diagrama-de-Contexto.png)
 
 ### Diagrama de Contenedores:
-![Diagrama de contexto](images/C4-Diagrama-de-arquitectura-Diagrama-de-Contenedores.png)
+![Diagrama de contexto](C4-Diagrama-de-arquitectura-Diagrama-de-Contenedores.png)
 
 ### Diagrama de Componentes:
-![Diagrama de contexto](images/C4-Diagrama-de-arquitectura-Diagrama-de-Componentes.png)
+![Diagrama de contexto](C4-Diagrama-de-arquitectura-Diagrama-de-Componentes.png)
