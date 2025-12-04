@@ -1,4 +1,4 @@
-# Reto 2 – Plataforma de Notificación de Emergencias (Serverless en AWS)
+# Reto 2 – Sistema de Alerta Temprana - Monitoreo de Flota Vehicular (Serverless en AWS)
 
 Este documento describe la arquitectura propuesta para el reto de **recibir eventos de flota**, **detectar emergencias** y **enviar correos**.
 
