@@ -35,32 +35,26 @@ Este estilo permite escalar automáticamente con mínima operación, absorber pi
    - Expone `POST /prod/event-notification`.
    - Configurado con `throttling_rate_limit = 15 rps` y un **burst alto (≈1000–2000)** para cumplir la restricción de 15 rps.
    - Actúa como *front door* seguro (HTTPS, validación básica).
+   - Alternativas: ALB mas costoso, EC2 requiere gestion
 
-2. **Lambda `IngestEvent`**
-   - Runtime ligero (Node.js).
-   - `reserved_concurrent_executions = 10` para respetar el límite de instancias del reto.
-   - Responsabilidades:
-     - Parsear y validar el JSON.
-     - Registrar log de recepción (`event_received`).
-     - Detectar `type === "Emergency"` y registrar log (`emergency_detected`).
-     - Invocar de forma **asíncrona** a `SendEmergencyEmail`.
-   - Devuelve `HTTP 200` lo más rápido posible para maximizar throughput.
-
-3. **Lambda `SendEmergencyEmail`**
-   - Encapsula la lógica de notificación.
-   - Recibe `emergencyEvent` y `receivedAt`.
-   - Envía el correo usando **Amazon SES** a una cuenta de Gmail.
-   - Registra log (`email_sent`) con timestamp de envío.
+2. **Lambda**
+   - Serverless con escalado automatico. Limite de concurrencia configurable a 10 instancias.
+   - Alternativas: ECS/Fargate over-engineering, EC2 costoso 24/7
 
 4. **Amazon SES**
    - Servicio gestionado de correo saliente.
    - Evita gestionar SMTP propio y mejora confiabilidad y latencia de entrega.
+   - Alternativas: SNS+Email menos control, SMTP externo mas latencia
 
 5. **CloudWatch Logs**
    - Almacena los logs de ambas Lambdas:
      - Recepción del evento `Emergency`.
      - Envío exitoso del correo.
    - Sirve como evidencia para el entregable de **Logs de ejecución**.
+
+6. **Amazon SQS**
+   - Desacopla recepción del procesamiento. Buffer que absorbe picos sin perder mensajes.
+   - Alternativas: Kinesis mas complejo, EventBridge latencia mayor
 
 6. **IAM**
    - Roles mínimos para cada Lambda:
@@ -78,10 +72,16 @@ En este reto, el objetivo principal es:
 
 > *Procesar 1000 eventos en 30 segundos, detectar el evento de emergencia y enviar el correo en menos de 30 segundos, sin errores.*
 
+¿Por que Rendimiento? El sistema de alerta temprana debe notificar emergencias en el menor tiempo posible. Una alerta tardia en una situacion de panico vehicular puede significar la diferencia entre una respuesta efectiva y una tragedia.
+
 Este objetivo combina:
 
 - **Throughput**: volumen de requests/segundo que el sistema puede soportar.
 - **Latencia**: tiempo entre recepción del evento y respuesta/envío de correo.
+
+Trade-offs considerados:
+- Costo vs Velocidad: Serverless tiene mayor costo por ejecucion, pero elimina latencia de cold start prolongado.
+- Complejidad vs Rendimiento: SQS anade un paso, pero garantiza no perder mensajes bajo alta carga.
 
 ### 3.2 Otros atributos relevantes
 
@@ -144,36 +144,39 @@ Este objetivo combina:
 
 ### 5.1 Tácticas para Desempeño
 
-1. **Controlar la demanda de recursos mediante throttling**
-   - Implementado en API Gateway con `throttling_rate_limit = 15`.
-   - Permite mantener la carga pico dentro de los límites aceptados por la plataforma, evitando sobrecargar Lambdas.
+1. **Introduce Concurrency**
+   - Lambda procesa múltiples mensajes en paralelo en batches de 10.
+   - Hasta 10 instancias simultáneas.
+   - Parámetro: `Lambda Trigger Batch Size = 10`.
 
-2. **Separar la ruta crítica usando procesamiento asíncrono**
-   - El envío de correo se desacopla de la respuesta HTTP usando `InvocationType = "Event"` en la invocación de `SendEmergencyEmail`.
-   - Esto reduce la latencia del endpoint y sigue la táctica de **“introducir concurrencia / asynchrony”** para mejorar tiempo de respuesta.
+2. **Multiple Copies**
+   - El auto-scaling de Lambda crea réplicas.
+   - SQS almacena copias del mensaje hasta la confirmación.
+   - Parámetro: `Reserved Concurrency = 10`.
 
-3. **Uso de servicios gestionados altamente optimizados**
-   - Serverless (Lambda) y SES aprovechan optimizaciones internas de AWS para colas, recursos de red y escalado.
+3. **Bound Queue Sizes**
+   - API Gateway limita la tasa de entrada a 15 req/s.
+   - SQS absorbe picos sin saturar el sistema.
+   - Parámetros: `Usage Plan Rate = 15`, `Burst = 2000`.
 
-### 5.2 Tácticas para Disponibilidad
+---
 
-1. **Replicación dinámica de componentes de cómputo**
-   - Lambda escala horizontalmente hasta el límite de concurrencia configurado, siguiendo la táctica de **“mantener múltiples copias de componentes”** descrita para disponibilidad.
+### 5.2 Tácticas para Disponibilidad y Recuperación
 
-2. **Eliminación de single point of failure**
-   - No hay servidores propios; la disponibilidad se apoya en servicios gestionados con redundancia interna (API Gateway, Lambda, SES).
+4. **Retry / Rollback**
+   - Si Lambda falla al procesar, SQS reintenta automáticamente.
+   - `Visibility Timeout = 30s`.
+   - Táctica: detección de fallas + recuperación.
 
-3. **Registro detallado de eventos críticos**
-   - Logs en CloudWatch permiten detectar rápidamente fallos en el flujo `Emergency → Email`, alineado con las tácticas de monitoreo y detección de fallas. 
+5. **Use an Intermediary**
+   - SQS actúa como intermediario desacoplando productores de consumidores.
+   - Cola de mensajes que permite desacoplamiento temporal y espacial.
+   - Táctica: desacoplamiento temporal y espacial.
 
-### 5.3 Tácticas para Modificabilidad / Integrabilidad
-
-1. **Encapsular servicios externos detrás de interfaces claras**
-   - `SendEmergencyEmail` es el único punto que conoce SES. Cambiar a otro proveedor de correo o añadir canales (SMS, Slack) solo impactaría esta Lambda.
-   - Ejemplo de separar productores y consumidores y ocultar detalles volátiles, como se recomienda para mejorar modifiabilidad. 
-
-2. **Uso de configuración en entorno**
-   - Correos destino, asunto, etc. se parametrizan vía variables de entorno, reduciendo cambios de código.
+6. **Record/Playback**
+   - CloudWatch Logs registra la hora exacta de cada evento Emergency y envío de correo.
+   - Permite monitoreo y trazabilidad del flujo.
+   - Táctica: monitoreo y trazabilidad.
 
 ---
 
