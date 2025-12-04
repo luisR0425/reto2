@@ -191,4 +191,4 @@ A continuación se presentan los diagramas en formato C4.
 ![Diagrama de contexto](C4-Diagrama-de-arquitectura-Diagrama-de-Contenedores.png)
 
 ### Diagrama de Componentes:
-![Diagrama de contexto](C4-Diagrama-de-arquitectura-Diagrama-de-Componentes.png)
+
